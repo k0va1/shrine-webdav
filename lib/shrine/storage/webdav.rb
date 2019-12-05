@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'shrine'
 require 'http'
 require 'down/http'
@@ -5,11 +7,12 @@ require 'down/http'
 class Shrine
   module Storage
     class WebDAV
-      def initialize(host:, prefix: nil, upload_options: {})
-        @host = host
-        @prefix = prefix
-        @prefixed_host = path(@host, @prefix)
+      def initialize(host:, prefix: nil, upload_options: {}, credentials: {})
+        @host           = host
+        @prefix         = prefix
+        @prefixed_host  = path(@host, @prefix)
         @upload_options = upload_options
+        @credentials    = credentials
       end
 
       def upload(io, id, shrine_metadata: {}, **upload_options)
@@ -23,19 +26,36 @@ class Shrine
       end
 
       def open(id)
-        Down::Http.open(path(@prefixed_host, id))
+        if @credentials.empty?
+          Down::Http.open(path(@prefixed_host, id))
+        else
+          Down::Http.open(
+            path(@prefixed_host, id),
+            headers: { 'Authorization' => 'Basic ' + Base64.strict_encode64("#{@credentials[:user]}:#{@credentials[:pass]}") }
+          )
+        end
       end
 
       def exists?(id)
-        response = HTTP.head(path(@prefixed_host, id))
+        response = client.head(path(@prefixed_host, id))
         (200..299).cover?(response.code.to_i)
       end
 
       def delete(id)
-        HTTP.delete(path(@prefixed_host, id))
+        client.delete(path(@prefixed_host, id))
       end
 
       private
+
+      def client
+        return @client if @client
+
+        if @credentials.empty?
+          @client = HTTP::Client.new
+        else
+          @client = HTTP.basic_auth(user: @credentials[:user], pass: @credentials[:pass])
+        end
+      end
 
       def current_options(upload_options)
         options = {}
@@ -44,8 +64,8 @@ class Shrine
       end
 
       def put(id, io)
-        uri = path(@prefixed_host, id)
-        response = HTTP.put(uri, body: io)
+        uri      = path(@prefixed_host, id)
+        response = client.put(uri, body: io)
         return if (200..299).cover?(response.code.to_i)
         raise Error, "uploading of #{uri} failed, the server response was #{response}"
       end
@@ -56,7 +76,7 @@ class Shrine
 
       def mkpath_to_file(path_to_file)
         @prefix_created ||= create_prefix
-        last_slash = path_to_file.rindex('/')
+        last_slash      = path_to_file.rindex('/')
         if last_slash
           path = path_to_file[0..last_slash]
           mkpath(@prefixed_host, path)
@@ -73,7 +93,7 @@ class Shrine
           dirs << "#{dirs[-1]}/#{dir}"
         end
         dirs.each do |dir|
-          response = HTTP.request(:mkcol, "#{host}#{dir}")
+          response = client.request(:mkcol, "#{host}#{dir}")
           unless (200..301).cover?(response.code.to_i)
             raise Error, "creation of directory #{host}#{dir} failed, the server response was #{response}"
           end

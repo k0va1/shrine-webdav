@@ -65,9 +65,13 @@ Create file `shrine.rb` in `config/initializers/` to configure WebDAV storage:
 require 'shrine'
 require "shrine/storage/webdav"
 
+# Add WebDAV credentials if you want to use basic auth
+webdav_credentials = { user: ENV['WEBDAV_USER'], pass: ENV['WEBDAV_PASSWORD'] }
+
+# If you don't want to use auth just remove `credentials` key
 Shrine.storages = {
-  cache: Shrine::Storage::WebDAV.new(host: 'http://webdav-server.com', prefix: 'your_project/cache'),
-  store: Shrine::Storage::WebDAV.new(host: 'http://webdav-server.com', prefix: 'your_project/store')
+  cache: Shrine::Storage::WebDAV.new(host: 'http://webdav-server.com', prefix: 'your_project/cache', credentials: webdav_credentials),
+  store: Shrine::Storage::WebDAV.new(host: 'http://webdav-server.com', prefix: 'your_project/store', credentials: webdav_credentials)
 }
 ```
 
